@@ -1,16 +1,18 @@
+from multiprocessing import Pool
+
+
 def init_grid(serial, size=300):
     return [[power_level(x, y, serial) for y in range(1, size + 1)] for x in range(1, size + 1)]
 
 
-def grid_power(x, y, sat, side_length):
-    x -= 1
-    y -= 1
-    offset = side_length - 1
-    upper_left_outside = 0 if x == 0 else sat[x - 1][y - 1]
-    lower_left_outside = 0 if x == 0 else sat[x - 1][y + offset]
-    upper_right_outside = 0 if y == 0 else sat[x + offset][y - 1]
-    lower_right = sat[x + offset][y + offset]
-    return lower_right - upper_right_outside - lower_left_outside + upper_left_outside
+def power_level(x, y, serial):
+    rack_id = x + 10
+    pwr_level = rack_id * y
+    pwr_level += serial
+    pwr_level *= rack_id
+    pwr_level = (pwr_level // 100) % 10
+    pwr_level -= 5
+    return pwr_level
 
 
 def summed_area_table(table):
@@ -27,38 +29,45 @@ def summed_area_table(table):
     return sat
 
 
-def power_level(x, y, serial):
-    rack_id = x + 10
-    pwr_level = rack_id * y
-    pwr_level += serial
-    pwr_level *= rack_id
-    pwr_level = (pwr_level // 100) % 10
-    pwr_level -= 5
-    return pwr_level
+def sub_grid_power(x, y, sat, side_length):
+    x -= 1
+    y -= 1
+    offset = side_length - 1
+    upper_left_outside = 0 if x == 0 else sat[x - 1][y - 1]
+    lower_left_outside = 0 if x == 0 else sat[x - 1][y + offset]
+    upper_right_outside = 0 if y == 0 else sat[x + offset][y - 1]
+    lower_right = sat[x + offset][y + offset]
+    return lower_right - upper_right_outside - lower_left_outside + upper_left_outside
+
+
+def highest_power_grid_coordinates(serial, side_length):
+    table = init_grid(serial)
+    sat = summed_area_table(table)
+    return highest_power_grid_coordinates_for_side(sat, side_length)
 
 
 def highest_power_grid_coordinates(serial):
     table = init_grid(serial)
     sat = summed_area_table(table)
-    greatest_power = -10
-    greatest_power_info = ()
-    for side_length in range(1, 301):
-        x, y, power = highest_power_grid_coordinates_fixed_side(sat, side_length)
-        if power > greatest_power:
-            greatest_power = power
-            greatest_power_info = (x, y, side_length, power)
-    return greatest_power_info
+    arg_range = [(sat, x) for x in range(1, 301)]
+    p = Pool()
+    results = p.starmap(highest_power_grid_coordinates_for_side, arg_range)
+    return max(results, key=get_power)
 
 
-def highest_power_grid_coordinates_fixed_side(sat, side_length):
+def get_power(coordinates):
+    return coordinates[3]
+
+
+def highest_power_grid_coordinates_for_side(sat, side_length):
     greatest_power = None
     coordinates = ()
     for y in range(1, 302 - side_length):
         for x in range(1, 302 - side_length):
-            total_pwr = grid_power(x, y, sat, side_length)
+            total_pwr = sub_grid_power(x, y, sat, side_length)
             if not greatest_power or total_pwr > greatest_power:
                 greatest_power = total_pwr
-                coordinates = (x, y, total_pwr)
+                coordinates = (x, y, side_length, total_pwr)
     return coordinates
 
 
@@ -84,23 +93,23 @@ def test_power_level():
 
 
 def test_total_power():
-    assert grid_power(2, 2, sat_for_test(), 3) == 159
-    assert grid_power(33, 45, summed_area_table(init_grid(18)), 3) == 29
-    assert grid_power(21, 61, summed_area_table(init_grid(42)), 3) == 30
+    assert sub_grid_power(2, 2, sat_for_test(), 3) == 159
+    assert sub_grid_power(33, 45, summed_area_table(init_grid(18)), 3) == 29
+    assert sub_grid_power(21, 61, summed_area_table(init_grid(42)), 3) == 30
 
 
 def test_highest_power_grid_coordinates_fixed_side():
     # Assignment 1 examples
-    assert highest_power_grid_coordinates_fixed_side(summed_area_table(init_grid(18)), 3) == (33, 45, 29)
-    assert highest_power_grid_coordinates_fixed_side(summed_area_table(init_grid(42)), 3) == (21, 61, 30)
-    # Answer to assignment 1
-    assert highest_power_grid_coordinates_fixed_side(summed_area_table(init_grid(5153)), 3) == (235, 18, 31)
+    assert highest_power_grid_coordinates_for_side(summed_area_table(init_grid(18)), 3) == (33, 45, 3, 29)
+    assert highest_power_grid_coordinates_for_side(summed_area_table(init_grid(42)), 3) == (21, 61, 3, 30)
+    # Assignment 1 answer
+    assert highest_power_grid_coordinates_for_side(summed_area_table(init_grid(5153)), 3) == (235, 18, 3, 31)
 
 
 def test_highest_power_grid_coordinates():
     # Assignment 2 examples
-    #    assert highest_power_grid_coordinates(18) == (90, 269, 16, 113)
-    #    assert highest_power_grid_coordinates(42) == (232, 251, 12, 119)
+    assert highest_power_grid_coordinates(18) == (90, 269, 16, 113)
+    assert highest_power_grid_coordinates(42) == (232, 251, 12, 119)
     # Assignment 2 answer
     assert highest_power_grid_coordinates(5153) == (236, 227, 12, 110)
 
